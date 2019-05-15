@@ -67,12 +67,13 @@
 	leds {
 		compatible = "gpio-leds";
 		green {
-			gpios = <&gpioj 5 GPIO_ACTIVE_HIGH>;
+			gpios = <&gpioi 11 GPIO_ACTIVE_HIGH>;
 			linux,default-trigger = "heartbeat";
 		};
 		red {
-			gpios = <&gpioj 13 GPIO_ACTIVE_HIGH>;
+			gpios = <&gpiob 13 GPIO_ACTIVE_HIGH>; /* gpiob_14 gpiob_15 is both ok to test */
 		};
+		
 	};
 
 	gpio_keys {
