@@ -226,6 +226,10 @@ static void stm32_receive_chars(struct uart_port *port, bool threaded)
 	while (stm32_pending_rx(port, &sr, &stm32_port->last_res, threaded)) {
 		sr |= USART_SR_DUMMY_RX;
 		c = stm32_get_char(port, &sr, &stm32_port->last_res);
+		/* 取出数据之后重新获取一次中断状态寄存器的值，测试发现否则
+		 * 会概率的卡住
+		 */
+		sr = readl_relaxed(port->membase + ofs->isr);
 		flag = TTY_NORMAL;
 		port->icount.rx++;
 
