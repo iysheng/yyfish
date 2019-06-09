@@ -154,3 +154,34 @@
 	pinctrl-names = "default";
 	status = "okay";
 };
+
+/* 512MB Flash via SLC NAND controller */
+&slc {
+	status = "okay";
+	iobase_addr = <0x80000000>;
+	iobase_cmd = <0x80010000>;
+	iobase_data = < 0x80020000>;
+	/* nand-on-flash-bbt; */
+	nand-ecc-algo = "bch"
+
+	partitions {
+		compatible = "fixed-partitions";
+		#address-cells = <1>;
+		#size-cells = <1>;
+
+		mtd0@0 {
+			label = "yyfish-rootfs";
+			reg = <0x01000000 0x01000000>;
+			/* read-only; */
+		};
+	};
+};
+
+&dma1 {
+	/* status = "okay"; */
+	status = "disabled";
+};
+
+&dma2 {
+	status = "disabled";
+};

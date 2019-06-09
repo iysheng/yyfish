@@ -628,6 +628,13 @@
 			clock-names = "otg";
 			status = "disabled";
 		};
+	
+		slc: flash@20020000 {
+			compatible = "st,stm32f7x-slc";
+			reg = <0xa0000000 0x10000>;
+			clocks = <&rcc 0 STM32F7_AHB3_CLOCK(FMC)>;
+			status = "disabled";
+		};
 	};
 };
 
