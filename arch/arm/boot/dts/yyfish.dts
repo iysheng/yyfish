@@ -160,9 +160,16 @@
 	status = "okay";
 	iobase_addr = <0x80000000>;
 	iobase_cmd = <0x80010000>;
-	iobase_data = < 0x80020000>;
+	iobase_data = <0x80020000>;
+	/* 0x00:256B 0x01:512B 0x02:1KB 0x03:2KB 0x04:4KB 0x05:8KB */
+	fmc_pcr,eccps = /bits/ 8 <0x03>;
+	fmc_pcr,tar = /bits/ 8 <0x0a>;
+	fmc_pcr,tclr = /bits/ 8 <0x0a>;
+	pmem = /bits/ 8 <0x0a 0x0a 0x0a 0x0a>;
+	patt = /bits/ 8 <0x0a 0x0a 0x0a 0x0a>;
+
 	/* nand-on-flash-bbt; */
-	nand-ecc-algo = "bch"
+	/* nand-ecc-algo = "bch"; */
 
 	partitions {
 		compatible = "fixed-partitions";

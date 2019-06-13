@@ -38,7 +38,39 @@
 #include <linux/of.h>
 #include <linux/of_gpio.h>
 
+
+//#define STM32F7XX_ECC_EN /* 支持 stm32 内置 ECC */
+
 #define STM32F7XX_MODNAME		"stm32f7xx-nand"
+
+#define FMC_PCR			0x80
+#define FMC_SR			0x84
+#define FMC_PMEM		0x88
+#define FMC_PATT		0x8c
+#define FMC_ECCR		0x94
+
+#define FMC(n,x) 		(typeof(x))(FMC_##n + (unsigned long)(x))
+
+/* FMEM_PCR */
+#define ECCPS(x)		((x) << 17)
+#define TAR(x)			((x) << 13)
+#define TCLR(x)			((x) << 9)
+#define ECCEN(x)		((x) << 6)
+#define PWID(x)			((x) << 4)
+#define PBKEN			(1 << 2)
+#define PWAITEN(x)		((x) << 1)
+
+/* FMEM_MEM */
+#define MEMHIZ(t)		((t) << 24)
+#define MEMHOLD(t)		((t) << 16)
+#define MEMWAIT(t)		((t) << 8)
+#define MEMSET(t)		(t)
+
+/* FMEM_ATT */
+#define ATTHIZ(t)		((t) << 24)
+#define ATTHOLD(t)		((t) << 16)
+#define ATTWAIT(t)		((t) << 8)
+#define ATTSET(t)		(t)
 
 /*
  * NAND ECC Layout for small page NAND devices
@@ -112,6 +144,27 @@ struct stm32f7xx_nand_cfg_slc {
 	void __iomem * iobase_addr;
 	void __iomem * iobase_cmd;
 	void __iomem * iobase_data;
+
+	u8 eccps;
+	u8 tar;
+	u8 tclr;
+	u8 eccen:1;
+	u8 pwid:3;
+	u8 reserve:4;
+/*
+	u8 memhiz;
+	u8 memhold;
+	u8 memwait;
+	u8 memset; 
+*/
+	u8 pmem[4];
+/*
+	u8 atthiz;
+	u8 atthold;
+	u8 attwait;
+	u8 attset;
+*/
+	u8 patt[4];
 	struct mtd_partition *parts;
 	unsigned num_parts;
 };
@@ -139,32 +192,44 @@ struct stm32f7xx_nand_host {
 /* 这个函数需要修改 */
 static void stm32f7xx_nand_setup(struct stm32f7xx_nand_host *host)
 {
-#if 0
-	/* Reset SLC controller */
-	writeb(SLCCTRL_SW_RESET, host->ncfg->iobase_cmd);
-	udelay(1000);
-
+	u32 tmp = 0;
+#if 1
 	/* Basic setup */
-	writeb(0, SLC_CFG(host->io_base));
-	writeb(0, SLC_IEN(host->io_base));
-	writeb((SLCSTAT_INT_TC | SLCSTAT_INT_RDY_EN),
-		SLC_ICR(host->io_base));
+/* FMEM_PCR */
+#define ECCPS(x)		((x) << 17)
+#define TAR(x)			((x) << 13)
+#define TCLR(x)			((x) << 9)
+#define ECCEN(x)		((x) << 6)
+#define PWID(x)			((x) << 4)
+#define PBKEN			(1 << 2)
+#define PWAITEN(x)		((x) << 1) /* 默认未开启 FIXME */
 
-	/* Get base clock for SLC block */
-	clkrate = clk_get_rate(host->clk);
-	if (clkrate == 0)
-		clkrate = STM32F7XX_DEF_BUS_RATE;
+/* FMEM_MEM */
+#define MEMHIZ(t)		((t) << 24)
+#define MEMHOLD(t)		((t) << 16)
+#define MEMWAIT(t)		((t) << 8)
+#define MEMSET(t)		(t)
 
-	/* Compute clock setup values */
-	tmp = SLCTAC_WDR(host->ncfg->wdr_clks) |
-		SLCTAC_WWIDTH(clkrate, host->ncfg->wwidth) |
-		SLCTAC_WHOLD(clkrate, host->ncfg->whold) |
-		SLCTAC_WSETUP(clkrate, host->ncfg->wsetup) |
-		SLCTAC_RDR(host->ncfg->rdr_clks) |
-		SLCTAC_RWIDTH(clkrate, host->ncfg->rwidth) |
-		SLCTAC_RHOLD(clkrate, host->ncfg->rhold) |
-		SLCTAC_RSETUP(clkrate, host->ncfg->rsetup);
-	writeb(tmp, SLC_TAC(host->io_base));
+/* FMEM_ATT */
+#define ATTHIZ(t)		((t) << 24)
+#define ATTHOLD(t)		((t) << 16)
+#define ATTWAIT(t)		((t) << 8)
+#define ATTSET(t)		(t)
+
+	tmp = ECCPS(host->ncfg->eccps) | TAR(host->ncfg->tar) | TCLR(host->ncfg->tclr) \
+		| PWID(host->ncfg->pwid) | PBKEN;
+#ifdef STM32F7XX_ECC_EN
+	tmp |= ECCEN(1);
+#endif
+	iowrite32(tmp, FMC(PCR, host->io_base));
+
+	tmp = MEMHIZ(host->ncfg->pmem[3]) | MEMHOLD(host->ncfg->pmem[2]) | \
+		MEMWAIT(host->ncfg->pmem[1]) | MEMSET(host->ncfg->pmem[0]);
+	iowrite32(tmp, FMC(PMEM, host->io_base));
+
+	tmp = ATTHIZ(host->ncfg->patt[3]) | ATTHOLD(host->ncfg->patt[2]) | \
+		ATTWAIT(host->ncfg->patt[1]) | ATTSET(host->ncfg->patt[0]);
+	iowrite32(tmp, FMC(PATT, host->io_base));
 #endif
 }
 
@@ -179,11 +244,9 @@ static void stm32f7xx_nand_cmd_ctrl(struct nand_chip *chip, int cmd,
 	if (cmd != NAND_CMD_NONE) {
 		if (ctrl & NAND_CLE)
 			/* 命令寄存器 */
-			//writeb(cmd, SLC_CMD(host->io_base));
 			writeb(cmd, host->ncfg->iobase_cmd);
 		else
 			/* 写地址 */
-			//writeb(cmd, SLC_ADDR(host->io_base));
 			writeb(cmd, host->ncfg->iobase_data);
 	}
 }
@@ -287,20 +350,80 @@ static struct stm32f7xx_nand_cfg_slc *stm32f7xx_parse_dt(struct device *dev)
 {
 	struct stm32f7xx_nand_cfg_slc *ncfg;
 	struct device_node *np = dev->of_node;
-	u32 tmp_addr = 0;
+	u32 val = 0;
 
 	ncfg = devm_kzalloc(dev, sizeof(*ncfg), GFP_KERNEL);
 	if (!ncfg)
 		return NULL;
 
-	of_property_read_u32(np, "iobase_addr", (u32 *)&tmp_addr);
-	ncfg->iobase_addr = ioremap_nocache(tmp_addr, PAGE_SIZE);
-	of_property_read_u32(np, "iobase_cmd", (u32 *)&tmp_addr);
-	ncfg->iobase_cmd = ioremap_nocache(tmp_addr, PAGE_SIZE);
-	of_property_read_u32(np, "iobase_data", (u32 *)&tmp_addr);
-	ncfg->iobase_data = ioremap_nocache(tmp_addr, PAGE_SIZE);
+	if (of_property_read_u32(np, "iobase_addr", (u32 *)&val)) {
+		printk("Faile to decode iobase_addr\n");
+		goto faile0;
+	}
+	else
+		ncfg->iobase_addr = ioremap_nocache(val, PAGE_SIZE);
+
+	if (of_property_read_u32(np, "iobase_cmd", (u32 *)&val)) {
+		printk("Faile to decode iobase_cmd\n");
+		goto faile1;
+	}
+	else
+		ncfg->iobase_cmd = ioremap_nocache(val, PAGE_SIZE);
+
+	if (of_property_read_u32(np, "iobase_data", (u32 *)&val)) {
+		printk("Faile to decode iobase_data\n");
+		goto faile2;
+	}
+	else
+		ncfg->iobase_data = ioremap_nocache(val, PAGE_SIZE);
+
+	if (of_property_read_u8(np, "fmc_pcr,eccps", &ncfg->eccps)) {
+		printk("Faile to decode fmc_pcr,eccps\n");
+	}
+
+	if (of_property_read_u8(np, "fmc_pcr,tar", &ncfg->tar)) {
+		printk("Faile to decode fmc_pcr,tar\n");
+		goto faile3;
+	}
+
+	if (of_property_read_u8(np, "fmc_pcr,tclr", &ncfg->tclr)) {
+		printk("Faile to decode fmc_pcr,tclr\n");
+		goto faile3;
+	}
+
+	if (of_property_read_u8_array(np, "pmem", &ncfg->pmem[0], sizeof(ncfg->pmem))) {
+		printk("Faile to decode pmem\n");
+		goto faile3;
+	}
+
+	if (of_property_read_u8_array(np, "patt", &ncfg->patt[0], sizeof(ncfg->patt))) {
+		printk("Faile to decode patt\n");
+		goto faile3;
+	}
+
+	if (!of_property_read_u32(np, "nand-bus-width", &val)) {
+		switch (val) {
+		case 8:
+			ncfg->pwid = 0;
+			break;
+		case 16:
+			ncfg->pwid = 1;
+			break;
+		default:
+			break;
+		}
+	}
 
 	return ncfg;
+faile3:
+	iounmap(ncfg->iobase_data);
+faile2:
+	iounmap(ncfg->iobase_cmd);
+faile1:
+	iounmap(ncfg->iobase_addr);
+faile0:
+	devm_kfree(dev, ncfg);
+	return NULL;
 }
 
 static int stm32f7xx_nand_attach_chip(struct nand_chip *chip)
